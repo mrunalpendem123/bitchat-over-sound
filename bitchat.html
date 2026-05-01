@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>bitchat over sound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body, #root { height: 100%; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    overflow: hidden;
+    background: #E5DED0;
+    color: #1A1510;
+  }
+
+  /* ── Backdrop ─────────────────────────────────────────────── */
+  .backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+
+  .backdrop::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 15% 20%, rgba(94,139,255,0.18), transparent 60%),
+      radial-gradient(ellipse 70% 55% at 85% 85%, rgba(255,122,61,0.14), transparent 60%),
+      radial-gradient(ellipse 80% 60% at 50% 110%, rgba(180,160,120,0.22), transparent 70%),
+      linear-gradient(180deg, #EFE8D8 0%, #E5DED0 50%, #DDD3BE 100%);
+  }
+
+  .backdrop::after {
+    content: ''; position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.45 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity: 0.3; mix-blend-mode: multiply;
+  }
+
+  .sonar {
+    position: absolute; top: 50%; left: 50%;
+    width: 140vmin; height: 140vmin;
+    transform: translate(-50%, -50%);
+    opacity: 0.6;
+  }
+  .sonar circle { fill: none; stroke: rgba(26,21,16,0.09); stroke-width: 1; }
+  .sonar .r0 { stroke: rgba(94,139,255,0.30); stroke-dasharray: 2 6; animation: sonarPulse 6s ease-out infinite; }
+  .sonar .r1 { animation: sonarPulse 6s ease-out infinite 0.6s; stroke: rgba(94,139,255,0.20); }
+  .sonar .r2 { animation: sonarPulse 6s ease-out infinite 1.2s; stroke: rgba(94,139,255,0.16); }
+  .sonar .r3 { animation: sonarPulse 6s ease-out infinite 1.8s; stroke: rgba(94,139,255,0.12); }
+  .sonar .r4 { stroke: rgba(26,21,16,0.06); }
+  .sonar .r5 { stroke: rgba(26,21,16,0.04); }
+
+  @keyframes sonarPulse {
+    0%   { stroke-opacity: 0.0; }
+    20%  { stroke-opacity: 1.0; }
+    100% { stroke-opacity: 0.0; }
+  }
+
+  .spectrum {
+    position: absolute; left: 50%; bottom: 5vh;
+    transform: translateX(-50%);
+    width: min(1100px, 90vw); height: 72px;
+    display: flex; align-items: flex-end; gap: 3px;
+    opacity: 0.22;
+  }
+  .spectrum span {
+    flex: 1; background: linear-gradient(180deg, rgba(26,21,16,0.6), rgba(26,21,16,0));
+    border-radius: 2px;
+    animation: specBar 2.8s ease-in-out infinite;
+  }
+
+  @keyframes specBar {
+    0%, 100% { height: 10%; }
+    30%      { height: 55%; }
+    60%      { height: 28%; }
+    80%      { height: 72%; }
+  }
+
+  .stamp {
+    position: absolute; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 1.2px; color: rgba(26,21,16,0.55);
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+    z-index: 2; pointer-events: none;
+  }
+  .stamp .dot { width: 6px; height: 6px; border-radius: 50%; background: #30D158;
+    box-shadow: 0 0 0 3px rgba(48,209,88,0.18); animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: 0.35; } }
+
+  .stamp.tl { top: 18px; left: 22px; }
+  .stamp.tr { top: 18px; right: 22px; }
+  .stamp.bl { bottom: 18px; left: 22px; }
+  .stamp.br { bottom: 18px; right: 22px; }
+
+  /* corner brackets around frame */
+  .bracket {
+    position: absolute; width: 16px; height: 16px;
+    pointer-events: none; z-index: 3;
+    border-color: rgba(26,21,16,0.45);
+  }
+  .bracket.tl { top: -12px; left: -12px; border-top: 1.5px solid; border-left: 1.5px solid; }
+  .bracket.tr { top: -12px; right: -12px; border-top: 1.5px solid; border-right: 1.5px solid; }
+  .bracket.bl { bottom: -12px; left: -12px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
+  .bracket.br { bottom: -12px; right: -12px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+
+  .frame-wrap {
+    position: relative;
+    z-index: 1;
+  }
+
+  .frame {
+    width: min(420px, 96vw);
+    height: min(860px, calc(100vh - 80px));
+    min-height: 560px;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow:
+      0 40px 90px rgba(26,21,16,0.22),
+      0 0 0 1px rgba(26,21,16,0.06),
+      0 0 0 10px rgba(255,251,244,0.45);
+    display: flex; flex-direction: column;
+    position: relative;
+    background: #fff;
+  }
+
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.7); }
+  }
+  @keyframes chirpRing {
+    0%   { transform: scale(0.4); opacity: 0.8; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  @keyframes bubbleIn {
+    0%   { transform: translateY(8px) scale(0.92); opacity: 0; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+  @keyframes fadeIn {
+    0%   { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  input::placeholder { color: currentColor; opacity: 0.45; }
+  input:disabled { opacity: 0.6; }
+  button { font-family: inherit; }
+  *::-webkit-scrollbar { width: 4px; height: 4px; }
+  *::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="backdrop" aria-hidden="true">
+  <svg class="sonar" viewBox="-500 -500 1000 1000">
+    <circle class="r0" cx="0" cy="0" r="120"/>
+    <circle class="r1" cx="0" cy="0" r="200"/>
+    <circle class="r2" cx="0" cy="0" r="290"/>
+    <circle class="r3" cx="0" cy="0" r="380"/>
+    <circle class="r4" cx="0" cy="0" r="460"/>
+    <circle class="r5" cx="0" cy="0" r="490"/>
+    <line x1="-500" y1="0" x2="500" y2="0" stroke="rgba(26,21,16,0.07)" stroke-width="0.5"/>
+    <line x1="0" y1="-500" x2="0" y2="500" stroke="rgba(26,21,16,0.07)" stroke-width="0.5"/>
+  </svg>
+  <div class="spectrum" id="spectrum"></div>
+</div>
+
+<div class="stamp tl"><span class="dot"></span> ACOUSTIC MESH · LIVE</div>
+<div class="stamp tr">4.2 KHZ · GGWAVE · 16 B/S</div>
+<div class="stamp bl">BUILT BY MRUNAL PENDEM</div>
+<div class="stamp br">NODE 7F·A2 · HOP 1</div>
+
+<div style="position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; z-index:1;">
+  <div class="frame-wrap">
+    <div class="bracket tl"></div>
+    <div class="bracket tr"></div>
+    <div class="bracket bl"></div>
+    <div class="bracket br"></div>
+    <div id="root" class="frame"></div>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const s = document.getElementById('spectrum');
+    if (!s) return;
+    const N = 64;
+    for (let i = 0; i < N; i++) {
+      const b = document.createElement('span');
+      b.style.animationDelay = (i * 0.04).toFixed(2) + 's';
+      b.style.animationDuration = (2.2 + Math.random() * 1.4).toFixed(2) + 's';
+      s.appendChild(b);
+    }
+  })();
+</script>
+
+<!-- React + Babel for the UI -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Protocol stack: ggwave WASM, bridge, MAC, chat, orchestrator -->
+<script src="lib/ggwave.js"></script>
+<script src="protocol/ggwave-bridge.js"></script>
+<script src="protocol/mac.js"></script>
+<script src="protocol/chat.js"></script>
+<script src="protocol/bitchat.js"></script>
+
+<!-- React UI (Babel-transpiled in browser) -->
+<script type="text/babel" src="app.jsx"></script>
+<script type="text/babel" src="onboarding.jsx"></script>
+<script type="text/babel" src="main.jsx"></script>
+</body>
+</html>
